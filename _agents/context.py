@@ -10,12 +10,14 @@ class AgentContext(BaseModel):
     current_file_id: str | None = None
     user_id: str | None = None
 
+
 class ConversationStore:
     def get(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         pass
 
     def save(self, conversation_id: str, state: Dict[str, Any]):
         pass
+
 
 class ConversationState(BaseModel):
     context: AgentContext

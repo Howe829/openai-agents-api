@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from uuid import UUID
 from services.message import MessageService
+from services.file import FileService
 
 
 router = APIRouter(prefix="/message")

@@ -3,6 +3,8 @@ from database import init_db
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from api.chat import router as chat_router
+from api.conversation import router as conversation_router
+from api.message import router as message_router
 
 
 @asynccontextmanager
@@ -14,6 +16,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 origins = [
     "http://localhost:5173",
+    "http://localhost:3000",
     # 也可以用 "*" 允许所有源，但不建议生产环境这么做
 ]
 
@@ -26,3 +29,5 @@ app.add_middleware(
 )
 
 app.include_router(chat_router)
+app.include_router(conversation_router)
+app.include_router(message_router)

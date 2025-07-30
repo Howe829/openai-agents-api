@@ -1,18 +1,20 @@
+import asyncio
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any
 from schemas.chat import ChatRequest
-
+from _agents.events import NewConversationEvent
 from agents import (
     Agent,
     Runner,
 )
 from _agents.context import ConversationState, SQLConversationStore, AgentContext
 from _agents.triage import triage_agent
+from _agents.events import NewMessageEvent
 from services.conversation import ConversationService
 from services.message import MessageService
 from loguru import logger
-from _agents.adapter import StreamEventAdapter
+from _agents.adapter import StreamEventAdapter, StreamEventSender
 
 router = APIRouter(prefix="/chat")
 
@@ -73,10 +75,17 @@ async def get_agents() -> List[Dict[str, Any]]:
 @router.post("/streaming")
 async def streamable_chat_endpoint(req: ChatRequest):
     conversation = ConversationService.get_conversation(req.conversation_id)
+    adapter = StreamEventAdapter()
+    sender = StreamEventSender()
     if conversation is None:
         conversation = ConversationService.create_conversation(
             state=ConversationState(context=AgentContext()).to_dict(),
         )
+        new_conversation_event = NewConversationEvent(
+            conversation_id=str(conversation.id)
+        )
+        await sender.send(new_conversation_event)
+
     state = ConversationState(**conversation.state)
     if req.file_id:
         state.context.current_file_id = req.file_id
@@ -97,6 +106,24 @@ async def streamable_chat_endpoint(req: ChatRequest):
     result = Runner.run_streamed(
         current_agent, [message.dict() for message in messages], context=state.context
     )
-    adapter = StreamEventAdapter(result.stream_events, state)
-
-    return StreamingResponse(adapter.stream(), media_type="application/x-ndjson")
+    
+    # 启动后台任务处理事件流
+    async def process_events():
+        try:
+            async for event in result.stream_events():
+                processed_event = adapter.process_event(event)
+                if isinstance(processed_event, NewMessageEvent):
+                    MessageService.create_message(
+                        role="assistant",
+                        content=processed_event.content,
+                        conversation_id=conversation.id,
+                        think=processed_event.think,
+                    )
+                await sender.send(processed_event)
+        finally:
+            await sender.close()
+    
+    # 立即启动后台任务，不等待完成
+    asyncio.create_task(process_events())
+    
+    return StreamingResponse(sender, media_type="application/x-ndjson")

@@ -1,4 +1,5 @@
 import time
+from api import conversation
 from pydantic import BaseModel, Field
 from typing import Dict, Any
 
@@ -25,6 +26,11 @@ class NewMessageEvent(BaseEvent):
     content: str
     think: str | None
     agent: str
+
+
+class NewConversationEvent(BaseEvent):
+    name: str = "NewConversationEvent"
+    conversation_id: str
 
 
 class ToolCalledEvent(BaseEvent):

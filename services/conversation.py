@@ -9,7 +9,7 @@ from schemas.conversation import ConversationFilter
 class ConversationService:
     @classmethod
     def create_conversation(
-        cls, name: str="Conversation", state: Optional[dict] = None
+        cls, name: str = "Conversation", state: Optional[dict] = None
     ) -> Conversation:
         conversation = Conversation(name=name, state=state)
         with get_session() as session:
