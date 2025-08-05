@@ -1,14 +1,13 @@
 import re
-import asyncio
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Callable
 from agents.stream_events import StreamEvent
 from agents import (
     AgentUpdatedStreamEvent,
     RawResponsesStreamEvent,
     RunItemStreamEvent,
 )
-from collections.abc import AsyncIterator, AsyncGenerator
-from _agents.context import ConversationState
+from collections.abc import AsyncIterator
 from _agents.events import (
     BaseEvent,
     AgentChangedEvent,
@@ -16,15 +15,25 @@ from _agents.events import (
     NewMessageEvent,
     ToolCalledEvent,
     ToolCallOutputEvent,
+    EventName,
 )
 from openai.types.responses import ResponseTextDeltaEvent
 
 
+@dataclass
 class StreamEventAdapter:
-    def __init__(self) -> None:
+    event_iterator: AsyncIterator
+    handlers: dict[EventName, Callable]
+
+    def __init__(self, event_interator: AsyncIterator) -> None:
+        self.event_iterator = event_interator
+        self.handlers = {}
         # pre-compiled regex patterns to improve performance
         self._think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
         self._think_remove_pattern = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+    def register_handler(self, event_name: EventName, handler: Callable) -> None:
+        self.handlers[event_name] = handler
 
     def _handle_agent_updated(
         self, event: AgentUpdatedStreamEvent
@@ -67,36 +76,29 @@ class StreamEventAdapter:
             case _:
                 return None
 
-    def process_event(self, event: StreamEvent) -> Optional[BaseEvent]:
-        match event:
-            case AgentUpdatedStreamEvent():
-                return self._handle_agent_updated(event)
-            case RawResponsesStreamEvent():
-                return self._handle_raw_response(event)
-            case RunItemStreamEvent():
-                return self._handle_run_item(event)
-            case _:
-                return None
-
-
-class StreamEventSender:
-    def __init__(self) -> None:
-        self._queue = asyncio.Queue()
-        self._close = False
-
-    async def send(self, event: BaseEvent | None) -> None:
+    def handle_event(self, event: Optional[BaseEvent]):
         if event is None:
             return
-        await self._queue.put(event.serialize())
+        handler = self.handlers.get(event.name)
+        if handler is None:
+            return
+        handler(event)
 
-    async def close(self) -> None:
-        self._close = True
-        await self._queue.put(None)
+    def process_event(self, event: StreamEvent) -> Optional[BaseEvent]:
+        processed_event = None
+        match event:
+            case AgentUpdatedStreamEvent():
+                processed_event = self._handle_agent_updated(event)
+            case RawResponsesStreamEvent():
+                processed_event = self._handle_raw_response(event)
+            case RunItemStreamEvent():
+                processed_event = self._handle_run_item(event)
+        self.handle_event(processed_event)
+        return processed_event
 
-    async def __aiter__(self) -> AsyncGenerator[str, None]:
-        """异步生成器，用于 StreamingResponse"""
-        while True:
-            item = await self._queue.get()
-            if item is None:
-                break
-            yield item
+    async def stream_events(self):
+        async for event in self.event_iterator:
+            processed_event = self.process_event(event)
+            if processed_event is None:
+                continue
+            yield processed_event.serialize()

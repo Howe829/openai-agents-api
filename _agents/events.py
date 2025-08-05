@@ -1,7 +1,14 @@
 import time
-from api import conversation
 from pydantic import BaseModel, Field
-from typing import Dict, Any
+from enum import Enum
+
+
+class EventName(str, Enum):
+    AGENT_CHANGED_EVENT = "AgentChangedEvent"
+    MESSAGE_DELTA_EVENT = "MessageDeltaEvent"
+    NEW_MESSAGE_EVENT = "NewMessageEvent"
+    TOOL_CALLED_EVENT = "ToolCalledEvent"
+    TOOL_CALL_OUTPUT_EVENT = "ToolCallOutputEvent"
 
 
 class BaseEvent(BaseModel):
@@ -12,35 +19,30 @@ class BaseEvent(BaseModel):
 
 
 class AgentChangedEvent(BaseEvent):
-    name: str = "AgentChangedEvent"
+    name: EventName = EventName.AGENT_CHANGED_EVENT
     current_agent: str
 
 
 class MessageDeltaEvent(BaseEvent):
-    name: str = "MessageDeltaEvent"
+    name: EventName = EventName.MESSAGE_DELTA_EVENT
     delta: str
 
 
 class NewMessageEvent(BaseEvent):
-    name: str = "NewMessageEvent"
+    name: EventName = EventName.NEW_MESSAGE_EVENT
     content: str
     think: str | None
     agent: str
 
 
-class NewConversationEvent(BaseEvent):
-    name: str = "NewConversationEvent"
-    conversation_id: str
-
-
 class ToolCalledEvent(BaseEvent):
-    name: str = "ToolCalledEvent"
+    name: EventName = EventName.TOOL_CALLED_EVENT
     tool_name: str
     tool_call_id: str
     args: str
 
 
 class ToolCallOutputEvent(BaseEvent):
-    name: str = "ToolCallOutputEvent"
+    name: EventName = EventName.TOOL_CALL_OUTPUT_EVENT
     output: str
     call_id: str

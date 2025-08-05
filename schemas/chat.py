@@ -4,6 +4,6 @@ from uuid import UUID
 
 
 class ChatRequest(BaseModel):
-    conversation_id: Optional[UUID] = None
+    conversation_id: UUID
     file_id: Optional[UUID] = None
     message: str
