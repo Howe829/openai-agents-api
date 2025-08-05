@@ -14,6 +14,8 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
   onDeleteConversation: (id: string) => void;
+  isDarkMode: boolean;
+  onToggleDarkMode: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -21,12 +23,23 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeConversationId,
   onSelectConversation,
   onNewChat,
-  onDeleteConversation
+  onDeleteConversation,
+  isDarkMode,
+  onToggleDarkMode
 }) => {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <h2>ChatGPT</h2>
+        <div className="header-top">
+          <h2>ChatGPT</h2>
+          <button 
+            className="theme-toggle-btn" 
+            onClick={onToggleDarkMode}
+            title={isDarkMode ? '切换到浅色模式' : '切换到夜间模式'}
+          >
+            {isDarkMode ? '☀️' : '🌙'}
+          </button>
+        </div>
         <button className="new-chat-btn" onClick={onNewChat}>
           + 新对话
         </button>

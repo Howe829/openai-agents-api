@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Message as MessageType } from '../types';
 
 interface MessageProps {
@@ -21,7 +22,11 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
   return (
     <div className={`message ${role} ${isStreaming ? 'streaming' : ''}`}>
       <div className="message-content">
-        {content || (isStreaming ? '' : '')}
+        {role === 'assistant' ? (
+          <ReactMarkdown>{content || (isStreaming ? '' : '')}</ReactMarkdown>
+        ) : (
+          content || (isStreaming ? '' : '')
+        )}
         {isStreaming && <span className="streaming-indicator"> ...</span>}
       </div>
     </div>

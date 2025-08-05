@@ -19,6 +19,11 @@ function App() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0); // 用于重置Chat组件
   const [loading, setLoading] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // 从localStorage读取主题设置，默认为false（浅色模式）
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
 
   // 加载对话列表
   const loadConversations = useCallback(async () => {
@@ -53,9 +58,14 @@ function App() {
     }
   }, [loadConversations]);
 
-  const handleSelectConversation = useCallback(async (id: string) => {
+  const handleSelectConversation = useCallback(async (id: string, forceRerender: boolean = true) => {
     setActiveConversationId(id);
-    setChatKey(prev => prev + 1); // 强制重新渲染Chat组件
+    
+    // 只有在需要强制重新渲染时才更新chatKey（比如用户手动选择对话）
+    // 自动创建对话时不重新渲染，避免丢失流式消息状态
+    if (forceRerender) {
+      setChatKey(prev => prev + 1);
+    }
     
     // 加载选中conversation的messages
     try {
@@ -110,6 +120,24 @@ function App() {
     }
   }, [activeConversationId]);
 
+  // 切换主题模式
+  const toggleDarkMode = useCallback(() => {
+    setIsDarkMode((prev: boolean) => {
+      const newMode = !prev;
+      localStorage.setItem('darkMode', JSON.stringify(newMode));
+      return newMode;
+    });
+  }, []);
+
+  // 应用主题到document
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+    }
+  }, [isDarkMode]);
+
   const activeConversation = conversations.find(conv => conv.id === activeConversationId);
 
   return (
@@ -120,6 +148,8 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={toggleDarkMode}
       />
       <Chat 
         key={chatKey}

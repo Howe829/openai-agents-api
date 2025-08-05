@@ -7,7 +7,7 @@ interface ChatProps {
   initialMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   onMessagesChange?: (messages: Array<{ role: 'user' | 'assistant'; content: string }>) => void;
   onConversationUpdate?: () => void;
-  onConversationSelect?: (conversationId: string) => void;
+  onConversationSelect?: (conversationId: string, forceRerender?: boolean) => void;
   conversationId?: string | null;
 }
 
@@ -32,7 +32,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessages, onMessagesChange, o
       console.log('Rendering message:', message.id, message.content, message.isStreaming);
       return (
         <Message 
-          key={`${message.id}-${message.content.length}-${message.isStreaming}`} 
+          key={message.id} 
           message={message} 
         />
       );
@@ -45,10 +45,6 @@ export const Chat: React.FC<ChatProps> = ({ initialMessages, onMessagesChange, o
 
   return (
     <div className="chat-container">
-      <div className="chat-header">
-        <h1>AI 助手</h1>
-      </div>
-      
       <div className="chat-messages">
         {renderedMessages}
         
