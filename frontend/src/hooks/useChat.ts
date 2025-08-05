@@ -118,7 +118,10 @@ export const useChat = (options: UseChatOptions = {}) => {
           onConversationUpdate();
         }
         if (onConversationSelect) {
-          onConversationSelect(currentConversationId, false);
+          // 确保currentConversationId不为null后再调用
+          if (currentConversationId) {
+            onConversationSelect(currentConversationId, false);
+          }
         }
       }
 
