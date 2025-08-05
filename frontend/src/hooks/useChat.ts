@@ -7,7 +7,7 @@ interface UseChatOptions {
   initialMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   onMessagesChange?: (messages: Array<{ role: 'user' | 'assistant'; content: string }>) => void;
   onConversationUpdate?: () => void;
-  onConversationSelect?: (conversationId: string) => void;
+  onConversationSelect?: (conversationId: string, forceRerender?: boolean) => void;
   conversationId?: string | null;
 }
 
@@ -39,13 +39,20 @@ export const useChat = (options: UseChatOptions = {}) => {
   }, [JSON.stringify(initialMessages)]);
 
   // 使用useEffect来处理消息变化回调，避免在渲染期间调用
+  // 当添加用户消息或assistant消息完成流式传输时触发onMessagesChange
   useEffect(() => {
     if (onMessagesChange && messages.length > 0) {
-      const simpleMessages = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-      onMessagesChange(simpleMessages);
+      // 获取非流式消息（用户消息和已完成的assistant消息）
+      const nonStreamingMessages = messages.filter(msg => !msg.isStreaming);
+      
+      // 只要有非流式消息就触发MessageList更新
+      if (nonStreamingMessages.length > 0) {
+        const simpleMessages = nonStreamingMessages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+        onMessagesChange(simpleMessages);
+      }
     }
   }, [messages, onMessagesChange]);
 
@@ -72,6 +79,17 @@ export const useChat = (options: UseChatOptions = {}) => {
     });
   }, []);
 
+  // 用于流式消息的临时更新，不触发MessageList更新
+  const updateMessageStreaming = useCallback((id: string, updates: Partial<Message>) => {
+    console.log('updateMessageStreaming called with:', { id, updates });
+    setMessages(prev => {
+      const newMessages = prev.map(msg => 
+        msg.id === id ? { ...msg, ...updates } : msg
+      );
+      return newMessages;
+    });
+  }, []);
+
   const sendMessage = useCallback(async (content: string, fileId?: string) => {
     if (!content.trim() || isLoading) return;
 
@@ -84,23 +102,36 @@ export const useChat = (options: UseChatOptions = {}) => {
       content: content.trim(),
     });
 
-    // Add assistant message placeholder
-    const assistantMessageId = addMessage({
-      role: 'assistant',
-      content: '',
-      isStreaming: true,
-    });
-    console.log('创建assistant消息，ID:', assistantMessageId);
+    let assistantContent = '';
+    let assistantMessageId: string | null = null;
+    let currentConversationId = externalConversationId || conversationId;
 
     try {
+      // 如果没有conversation_id，先创建一个conversation
+      if (!currentConversationId) {
+        const newConversation = await ChatAPI.createConversation();
+        currentConversationId = newConversation.id;
+        setConversationId(currentConversationId);
+        
+        // 通知父组件更新conversation列表
+        if (onConversationUpdate) {
+          onConversationUpdate();
+        }
+        if (onConversationSelect) {
+          onConversationSelect(currentConversationId, false);
+        }
+      }
+
+      // 确保currentConversationId不为null
+      if (!currentConversationId) {
+        throw new Error('Failed to get or create conversation ID');
+      }
+
       const request: ChatRequest = {
         message: content.trim(),
-        conversation_id: externalConversationId || conversationId || undefined,
+        conversation_id: currentConversationId,
         file_id: fileId,
       };
-
-      let assistantContent = '';
-      let currentConversationId = conversationId;
 
       for await (const event of ChatAPI.streamChat(request)) {
         console.log('接收到事件:', event);
@@ -116,39 +147,54 @@ export const useChat = (options: UseChatOptions = {}) => {
             onConversationUpdate();
           }
           if (onConversationSelect) {
-            onConversationSelect(event.conversation_id);
+            onConversationSelect(event.conversation_id, false); // 自动创建对话时不重新渲染
           }
         } else if (event.name === 'MessageDeltaEvent' && event.delta) {
             // 处理消息增量事件，流式显示消息内容
             console.log('收到MessageDeltaEvent:', event);
+            
+            // 如果还没有创建assistant消息，则创建一个新的
+            if (assistantMessageId === null) {
+              assistantMessageId = addMessage({
+                role: 'assistant',
+                content: '',
+                isStreaming: true,
+              });
+              console.log('创建新的assistant消息，ID:', assistantMessageId);
+            }
+            
             assistantContent += event.delta;
             console.log('累积内容更新:', { delta: event.delta, totalContent: assistantContent });
             
-            // 直接更新messages状态，确保增量内容立即显示
-            setMessages(prev => 
-              prev.map(msg => 
-                msg.id === assistantMessageId 
-                  ? { ...msg, content: assistantContent, isStreaming: true } 
-                  : msg
-              )
-            );
+            // 使用updateMessageStreaming进行流式更新，不触发MessageList更新
+            updateMessageStreaming(assistantMessageId, {
+              content: assistantContent,
+              isStreaming: true
+            });
         } else if (event.name === 'NewMessageEvent' && event.content) {
           console.log('收到NewMessageEvent:', event);
-          // NewMessageEvent表示消息完成，停止streaming状态
-          updateMessage(assistantMessageId, {
-            content: assistantContent || event.content,
-            isStreaming: false
-          });          console.log('已调用updateMessage完成消息ID:', assistantMessageId);
+          // NewMessageEvent表示消息完成，停止streaming状态并更新MessageList
+          if (assistantMessageId) {
+            updateMessage(assistantMessageId, {
+              content: assistantContent || event.content,
+              isStreaming: false
+            });
+            console.log('已调用updateMessage完成消息ID:', assistantMessageId);
+          }
         } else if (event.type === 'content' && event.data) {
           assistantContent += event.data;
-          updateMessage(assistantMessageId, {
-            content: assistantContent,
-            isStreaming: true,
-          });
+          if (assistantMessageId) {
+            updateMessageStreaming(assistantMessageId, {
+              content: assistantContent,
+              isStreaming: true,
+            });
+          }
         } else if (event.type === 'done') {
-          updateMessage(assistantMessageId, {
-            isStreaming: false,
-          });
+          if (assistantMessageId) {
+            updateMessage(assistantMessageId, {
+              isStreaming: false,
+            });
+          }
           // 消息发送完成后刷新对话列表
           if (onConversationUpdate) {
             onConversationUpdate();
@@ -160,10 +206,12 @@ export const useChat = (options: UseChatOptions = {}) => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMessage);
-      updateMessage(assistantMessageId, {
-        content: `Error: ${errorMessage}`,
-        isStreaming: false,
-      });
+      if (assistantMessageId) {
+        updateMessage(assistantMessageId, {
+          content: `Error: ${errorMessage}`,
+          isStreaming: false,
+        });
+      }
     } finally {
       setIsLoading(false);
     }
